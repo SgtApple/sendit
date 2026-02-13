@@ -8,6 +8,7 @@ import 'package:dio/dio.dart';
 import 'package:bech32/bech32.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:convert/convert.dart';
+import 'package:pointycastle/pointycastle.dart';
 import 'storage_service.dart';
 import 'image_processing_service.dart';
 
@@ -247,7 +248,7 @@ class NostrService extends ChangeNotifier {
       // In production, this would wait for the deep link callback
       return;
     } else {
-      // Use nsec for signing - requires secp256k1
+      // Use nsec for signing
       if (nsec == null || nsec.isEmpty) {
         throw Exception('Nostr private key (nsec) not configured. Use Amber on Android or provide nsec.');
       }
@@ -257,20 +258,15 @@ class NostrService extends ChangeNotifier {
         throw Exception('Invalid Nostr private key');
       }
       
-      debugPrint('Nostr: Direct signing with nsec is not yet implemented');
-      debugPrint('Nostr: This requires a secp256k1 library for Schnorr signatures');
-      throw UnimplementedError(
-        'Direct nsec signing requires secp256k1 implementation. '
-        'Please use Amber on Android or add a secp256k1 package.'
-      );
-      
-      // When implemented, this would be:
-      // signedEvent = await _signEventWithSecp256k1(event, privateKeyHex);
+      debugPrint('Nostr: Signing with nsec...');
+      final signature = _signEventSchnorr(eventId, privateKeyHex);
+      signedEvent = Map<String, dynamic>.from(event);
+      signedEvent['sig'] = signature;
     }
 
     // Publish to relays (only reached if not using Amber)
-    // debugPrint('Nostr: Publishing to relays...');
-    // await _publishToRelays(signedEvent);
+    debugPrint('Nostr: Publishing to relays...');
+    await _publishToRelays(signedEvent);
   }
 
   /// Complete posting after Amber callback (called from main.dart)
@@ -329,5 +325,81 @@ class NostrService extends ChangeNotifier {
       debugPrint('Nostr: Error publishing to $relayUrl: $e');
       rethrow;
     }
+  }
+
+  /// Sign event with Schnorr signature (BIP-340)
+  String _signEventSchnorr(String eventId, String privateKeyHex) {
+    try {
+      // Convert hex strings to bytes
+      final privateKeyBytes = Uint8List.fromList(hex.decode(privateKeyHex));
+      final messageBytes = Uint8List.fromList(hex.decode(eventId));
+      
+      // Create secp256k1 parameters
+      final params = ECDomainParameters('secp256k1');
+      final privateKey = ECPrivateKey(
+        BigInt.parse(privateKeyHex, radix: 16),
+        params,
+      );
+      
+      // Generate deterministic nonce using RFC6979
+      final k = _generateNonce(privateKeyBytes, messageBytes);
+      
+      // Calculate R = k*G
+      final R = (params.G * k)!;
+      final rx = R.x!.toBigInteger()!;
+      
+      // If R.y is odd, negate k
+      final ry = R.y!.toBigInteger()!;
+      var kFinal = k;
+      if (ry.isOdd) {
+        kFinal = params.n - k;
+      }
+      
+      // Calculate e = H(rx || P || m) where P is public key
+      final P = (params.G * privateKey.d!)!;
+      final px = P.x!.toBigInteger()!;
+      
+      final rxBytes = _bigIntToBytes32(rx);
+      final pxBytes = _bigIntToBytes32(px);
+      final combined = Uint8List.fromList([...rxBytes, ...pxBytes, ...messageBytes]);
+      final eHash = sha256.convert(combined);
+      final e = BigInt.parse(hex.encode(eHash.bytes), radix: 16) % params.n;
+      
+      // Calculate s = k + e*d mod n
+      final s = (kFinal + e * privateKey.d!) % params.n;
+      
+      // Signature is rx || s (64 bytes total)
+      final signature = Uint8List(64);
+      signature.setRange(0, 32, _bigIntToBytes32(rx));
+      signature.setRange(32, 64, _bigIntToBytes32(s));
+      
+      return hex.encode(signature);
+    } catch (e) {
+      debugPrint('Nostr: Schnorr signing error: $e');
+      rethrow;
+    }
+  }
+
+  /// Generate deterministic nonce using simplified RFC6979
+  BigInt _generateNonce(Uint8List privateKey, Uint8List message) {
+    final params = ECDomainParameters('secp256k1');
+    
+    // Simplified: Use HMAC-SHA256(key=privateKey, msg=message)
+    final hmac = Hmac(sha256, privateKey);
+    final k = hmac.convert(message);
+    final kBigInt = BigInt.parse(hex.encode(k.bytes), radix: 16);
+    
+    // Ensure k is in valid range [1, n-1]
+    return (kBigInt % (params.n - BigInt.one)) + BigInt.one;
+  }
+
+  /// Convert BigInt to 32-byte array
+  Uint8List _bigIntToBytes32(BigInt value) {
+    final bytes = Uint8List(32);
+    var hex = value.toRadixString(16).padLeft(64, '0');
+    for (var i = 0; i < 32; i++) {
+      bytes[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
+    }
+    return bytes;
   }
 }

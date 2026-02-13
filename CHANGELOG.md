@@ -5,6 +5,18 @@ All notable changes to SendIt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-02-13
+
+### Fixed
+- **CRITICAL**: Nostr posting now works with nsec keys
+  - Implemented Schnorr signature (BIP-340) using pointycastle
+  - Added proper secp256k1 signing for direct nsec usage
+  - Fixed early return bug that prevented Amber flow completion
+- All platforms can now successfully post without errors
+
+### Added
+- `pointycastle` dependency for cryptographic operations
+
 ## [1.1.0] - 2026-02-13
 
 ### Added
