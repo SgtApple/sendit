@@ -87,6 +87,24 @@ class NostrService extends ChangeNotifier {
     throw UnimplementedError('Use npub for public key');
   }
 
+  /// Save public key received from Amber (NIP-55 get_public_key response)
+  Future<void> saveAmberPublicKey(String pubkeyHex) async {
+    try {
+      // Convert hex pubkey to npub format
+      final decoded = hex.decode(pubkeyHex);
+      final bech32Encoder = Bech32Encoder();
+      final encoded = bech32Encoder.convert(Bech32('npub', decoded));
+      
+      // Save as npub
+      await _storage.saveString(StorageService.keyNostrNpub, encoded);
+      debugPrint('Nostr: Saved Amber public key as npub');
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Nostr: Error saving Amber pubkey: $e');
+      throw Exception('Failed to save Amber public key');
+    }
+  }
+
   /// Sign using Amber app on Android
   Future<void> _signWithAmber(String eventJson, String pubkey) async {
     if (!Platform.isAndroid) {
@@ -180,19 +198,17 @@ class NostrService extends ChangeNotifier {
 
     String? pubkeyHex;
 
-    // Get public key - always required for creating Nostr events
+    // Get public key
     if (useAmber && Platform.isAndroid) {
-      // Even with Amber, we need the public key to create the event
-      // Amber only signs the event after it's created
+      // When using Amber, we need the npub that was returned from get_public_key
       if (npub == null || npub.isEmpty) {
         throw Exception(
-          'Nostr public key (npub) required. Please configure your npub in Settings.\n\n'
-          'Note: Amber signs events but does not provide the public key. '
-          'You must enter your npub in Settings.'
+          'Not connected to Amber. Please toggle "Use Amber for signing" '
+          'in Settings to connect and authorize SendIt.'
         );
       }
       pubkeyHex = _npubToHex(npub);
-      debugPrint('Nostr: Using npub with Amber signing');
+      debugPrint('Nostr: Using Amber public key');
     } else {
       // Using nsec - require both npub and nsec
       if (npub == null || npub.isEmpty) {

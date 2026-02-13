@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:android_intent_plus/android_intent.dart' as android_intent;
 import '../services/storage_service.dart';
 import '../services/theme_service.dart';
 import '../theme.dart';
@@ -147,34 +148,76 @@ class _SettingsViewState extends State<SettingsView> {
           const Divider(height: 40),
           const Text('Nostr', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
-          TextField(
-            controller: _nostrNpubController,
-            decoration: const InputDecoration(
-              labelText: 'Public Key (npub)',
-              hintText: 'npub1...',
-              helperText: 'Required even when using Amber',
-            ),
-          ),
-          const SizedBox(height: 10),
           if (Platform.isAndroid)
-            SwitchListTile(
-              title: const Text('Use Amber for signing'),
-              subtitle: const Text('Sign events with Amber app'),
-              value: _nostrUseAmber,
-              onChanged: (value) {
-                setState(() {
-                  _nostrUseAmber = value;
-                });
-              },
+            Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Use Amber for signing'),
+                  subtitle: const Text('Connect to Amber signer app (NIP-55)'),
+                  value: _nostrUseAmber,
+                  onChanged: (value) async {
+                    if (value) {
+                      // Request public key from Amber
+                      try {
+                        final intent = android_intent.AndroidIntent(
+                          action: 'android.intent.action.VIEW',
+                          data: 'nostrsigner:',
+                          arguments: {'type': 'get_public_key'},
+                        );
+                        await intent.launch();
+                        // Note: The result will come back via the app, user needs to approve in Amber
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Approve the connection request in Amber app'),
+                              duration: Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error launching Amber: $e')),
+                          );
+                        }
+                        return;
+                      }
+                    }
+                    setState(() {
+                      _nostrUseAmber = value;
+                    });
+                  },
+                ),
+                if (_nostrNpubController.text.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Text(
+                      'Connected: ${_nostrNpubController.text.substring(0, 16)}...',
+                      style: TextStyle(color: Colors.green[700], fontSize: 12),
+                    ),
+                  ),
+              ],
             ),
           if (!_nostrUseAmber || !Platform.isAndroid)
-            TextField(
-              controller: _nostrNsecController,
-              decoration: const InputDecoration(
-                labelText: 'Private Key (nsec)',
-                hintText: 'nsec1...',
-              ),
-              obscureText: true,
+            Column(
+              children: [
+                TextField(
+                  controller: _nostrNpubController,
+                  decoration: const InputDecoration(
+                    labelText: 'Public Key (npub)',
+                    hintText: 'npub1...',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _nostrNsecController,
+                  decoration: const InputDecoration(
+                    labelText: 'Private Key (nsec)',
+                    hintText: 'nsec1...',
+                  ),
+                  obscureText: true,
+                ),
+              ],
             ),
           
           const Divider(height: 40),

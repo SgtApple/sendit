@@ -126,18 +126,43 @@ class _MyAppState extends State<MyApp> with WindowListener {
   void _handleDeepLink(Uri uri) async {
     debugPrint('Received deep link: $uri');
     
-    // Parse Amber callback: sendit://amber_callback?signature={sig}&id={id}&event={event}
+    // Parse Amber callback: sendit://amber_callback?result={result}&id={id}&event={event}&type={type}
     if (uri.scheme == 'sendit' && uri.host == 'amber_callback') {
-      final signature = uri.queryParameters['signature'];
+      final result = uri.queryParameters['result'];
       final event = uri.queryParameters['event'];
+      final id = uri.queryParameters['id'];
       
-      if (signature != null && signature.isNotEmpty) {
-        debugPrint('Amber returned signature: ${signature.substring(0, 20)}...');
+      if (result == null || result.isEmpty) {
+        debugPrint('Amber callback missing result');
+        return;
+      }
+      
+      // Check if this is a public key response (no event parameter)
+      if (event == null || event.isEmpty) {
+        // This is a get_public_key response
+        debugPrint('Amber returned public key: ${result.substring(0, 20)}...');
+        
+        try {
+          // Save the public key from Amber
+          final nostrService = context.read<NostrService>();
+          await nostrService.saveAmberPublicKey(result);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Connected to Amber successfully!')),
+            );
+          }
+        } catch (e) {
+          debugPrint('Error saving Amber pubkey: $e');
+        }
+      } else {
+        // This is a sign_event response (has signature and event)
+        debugPrint('Amber returned signature: ${result.substring(0, 20)}...');
         
         try {
           // Get NostrService and complete the posting
           final nostrService = context.read<NostrService>();
-          await nostrService.completePostWithAmberSignature(signature);
+          await nostrService.completePostWithAmberSignature(result);
           
           // Show success message
           if (mounted) {
@@ -153,8 +178,6 @@ class _MyAppState extends State<MyApp> with WindowListener {
             );
           }
         }
-      } else {
-        debugPrint('Amber callback missing signature');
       }
     }
   }

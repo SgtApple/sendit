@@ -5,6 +5,28 @@ All notable changes to SendIt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-13
+
+### Fixed
+- **CRITICAL: Proper Amber/NIP-55 implementation**
+  - Implemented correct NIP-55 protocol for Amber integration
+  - App now calls `get_public_key` to retrieve pubkey from Amber
+  - No manual npub entry needed when using Amber
+  - Proper deep link handling for both `get_public_key` and `sign_event` responses
+
+### Changed
+- **Improved Nostr Settings UX**
+  - Amber toggle now automatically requests public key from Amber
+  - Shows connection status when Amber is connected
+  - Manual npub/nsec fields only shown when not using Amber
+  - Better error messages for connection issues
+
+### Technical
+- Follows NIP-55 Android Signer Application specification
+- Amber returns pubkey in hex, converted to npub format
+- Deep link callback handles both key exchange and event signing
+- Proper separation of Amber vs manual key entry flows
+
 ## [1.1.3] - 2026-02-13
 
 ### Changed
