@@ -5,6 +5,32 @@ All notable changes to SendIt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-13
+
+### Changed
+- **Complete rewrite using amberflutter package**
+  - Replaced manual NIP-55 implementation with official amberflutter library
+  - Proper activity result handling instead of deep link callbacks
+  - Amber now shows signing dialog correctly
+  - Synchronous result handling - no more waiting for callbacks
+
+### Fixed
+- Amber signing dialog now appears properly
+- Posts complete successfully without hanging
+- No more "app just opens" issue
+
+### Technical
+- Added amberflutter ^0.0.9 dependency
+- Removed manual intent construction code
+- Removed deep link callback handling for Amber (still present but unused)
+- getPublicKey() and signEvent() now use amberflutter methods
+- Activity results handled internally by amberflutter
+
+### Removed
+- completePostWithAmberSignature() method (no longer needed)
+- Manual deep link callback parsing for Amber
+- URI query parameter construction for signing
+
 ## [1.2.1] - 2026-02-13
 
 ### Fixed

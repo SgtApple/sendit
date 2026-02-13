@@ -9,17 +9,15 @@ import 'package:bech32/bech32.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:convert/convert.dart';
 import 'package:pointycastle/pointycastle.dart';
+import 'package:amberflutter/amberflutter.dart';
 import 'storage_service.dart';
 import 'image_processing_service.dart';
-
-// For Amber integration on Android
-import 'package:android_intent_plus/android_intent.dart' as android_intent;
-import 'package:android_intent_plus/flag.dart';
 
 class NostrService extends ChangeNotifier {
   final StorageService _storage = StorageService();
   final Dio _dio = Dio();
   final ImageProcessingService _imageProcessing = ImageProcessingService();
+  final Amberflutter _amber = Amberflutter();
 
   static const List<String> _defaultRelays = [
     'wss://relay.damus.io',
@@ -27,10 +25,6 @@ class NostrService extends ChangeNotifier {
     'wss://nos.lol',
     'wss://relay.pleb.one',
   ];
-
-  // For Amber callback handling
-  String? _pendingEventId;
-  String? _pendingEventJson;
 
   /// Convert nsec to hex private key
   String? _nsecToHex(String nsec) {
@@ -87,78 +81,65 @@ class NostrService extends ChangeNotifier {
     throw UnimplementedError('Use npub for public key');
   }
 
-  /// Save public key received from Amber (NIP-55 get_public_key response)
-  Future<void> saveAmberPublicKey(String pubkeyHex, {String? packageName}) async {
+  /// Get public key from Amber (NIP-55)
+  Future<String?> getPublicKeyFromAmber() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+
     try {
-      // Convert hex pubkey to npub format
-      final decoded = hex.decode(pubkeyHex);
-      final bech32Encoder = Bech32Encoder();
-      final encoded = bech32Encoder.convert(Bech32('npub', decoded));
+      debugPrint('Nostr: Requesting public key from Amber...');
       
-      // Save as npub
-      await _storage.saveString(StorageService.keyNostrNpub, encoded);
+      final result = await _amber.getPublicKey(
+        permissions: [
+          Permission(type: "sign_event", kind: 1),
+        ],
+      );
       
-      // Save Amber package name for future intents
-      if (packageName != null && packageName.isNotEmpty) {
-        await _storage.saveString(StorageService.keyNostrAmberPackage, packageName);
-        debugPrint('Nostr: Saved Amber package: $packageName');
+      if (result != null && result['signature'] != null) {
+        final npub = result['signature'] as String;
+        debugPrint('Nostr: Received npub from Amber: ${npub.substring(0, 16)}...');
+        
+        // Save the npub
+        await _storage.saveString(StorageService.keyNostrNpub, npub);
+        notifyListeners();
+        
+        return npub;
       }
       
-      debugPrint('Nostr: Saved Amber public key as npub');
-      notifyListeners();
+      return null;
     } catch (e) {
-      debugPrint('Nostr: Error saving Amber pubkey: $e');
-      throw Exception('Failed to save Amber public key');
+      debugPrint('Nostr: Error getting public key from Amber: $e');
+      return null;
     }
   }
 
-  /// Sign using Amber app on Android (NIP-55)
-  Future<void> _signWithAmber(String eventJson, String pubkey) async {
+  /// Sign event using Amber app (NIP-55 via amberflutter)
+  Future<Map<String, dynamic>?> _signWithAmber(String eventJson, String npub) async {
     if (!Platform.isAndroid) {
       throw Exception('Amber is only available on Android');
     }
 
     try {
-      debugPrint('Nostr: Signing with Amber...');
+      debugPrint('Nostr: Signing with Amber via amberflutter...');
       
-      // Get Amber package name (saved from get_public_key response)
-      final amberPackage = await _storage.getString(StorageService.keyNostrAmberPackage);
-      
-      // According to NIP-55, for Android we can use either:
-      // 1. Intent extras (putExtra) - recommended for apps that support registerForActivityResult
-      // 2. URL scheme with query params - works cross-platform
-      // We'll use a hybrid approach: data URI with query params + intent extras
-      
-      final eventId = jsonDecode(eventJson)['id'];
-      final encodedEvent = Uri.encodeComponent(eventJson);
-      final callbackUrl = Uri.encodeComponent('sendit://amber_callback');
-      
-      // Build URI with query parameters (web-style approach that works for deep links)
-      final dataUri = 'nostrsigner:$encodedEvent'
-          '?compressionType=none'
-          '&returnType=signature'
-          '&type=sign_event'
-          '&callbackUrl=$callbackUrl'
-          '&id=$eventId'
-          '&current_user=$pubkey';
-      
-      final intent = android_intent.AndroidIntent(
-        action: 'android.intent.action.VIEW',
-        data: dataUri,
-        package: amberPackage ?? 'com.greenart7c3.nostrsigner', // Default to Amber's package
-        flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
+      final result = await _amber.signEvent(
+        currentUser: npub,
+        eventJson: eventJson,
       );
-
-      debugPrint('Nostr: Launching Amber for signing...');
-      debugPrint('Nostr: Event ID: $eventId');
-      await intent.launch();
       
-      // Note: The actual signature will be received via deep link callback
-      // This is handled in main.dart with app_links
-      debugPrint('Nostr: Waiting for Amber signature callback...');
+      if (result != null && result['event'] != null) {
+        final signedEventJson = result['event'] as String;
+        final signedEvent = jsonDecode(signedEventJson) as Map<String, dynamic>;
+        debugPrint('Nostr: Event signed by Amber successfully');
+        return signedEvent;
+      }
+      
+      debugPrint('Nostr: Amber signing returned null');
+      return null;
     } catch (e) {
       debugPrint('Nostr: Amber signing error: $e');
-      throw Exception('Failed to launch Amber: $e');
+      throw Exception('Failed to sign with Amber: $e');
     }
   }
 
@@ -290,20 +271,17 @@ class NostrService extends ChangeNotifier {
     Map<String, dynamic> signedEvent;
     
     if (useAmber && Platform.isAndroid) {
-      // Use Amber for signing
+      // Use Amber for signing - amberflutter handles everything
       debugPrint('Nostr: Signing with Amber...');
       
-      // Store event for callback
-      _pendingEventId = eventId;
-      _pendingEventJson = jsonEncode(event);
-      
-      // Launch Amber and wait for callback
       final eventJsonForAmber = jsonEncode(event);
-      await _signWithAmber(eventJsonForAmber, pubkeyHex);
+      final amberResult = await _signWithAmber(eventJsonForAmber, npub!);
       
-      // This will throw an exception explaining callback is needed
-      // In production, this would wait for the deep link callback
-      return;
+      if (amberResult == null) {
+        throw Exception('Amber signing was cancelled or failed');
+      }
+      
+      signedEvent = amberResult;
     } else {
       // Use nsec for signing
       if (nsec == null || nsec.isEmpty) {
@@ -321,26 +299,9 @@ class NostrService extends ChangeNotifier {
       signedEvent['sig'] = signature;
     }
 
-    // Publish to relays (only reached if not using Amber)
+    // Publish to relays
     debugPrint('Nostr: Publishing to relays...');
     await _publishToRelays(signedEvent);
-  }
-
-  /// Complete posting after Amber callback (called from main.dart)
-  Future<void> completePostWithAmberSignature(String signature) async {
-    if (_pendingEventJson == null) {
-      throw Exception('No pending event for Amber signature');
-    }
-
-    final event = jsonDecode(_pendingEventJson!) as Map<String, dynamic>;
-    event['sig'] = signature;
-    
-    debugPrint('Nostr: Event signed by Amber, publishing...');
-    await _publishToRelays(event);
-    
-    // Clear pending event
-    _pendingEventId = null;
-    _pendingEventJson = null;
   }
 
   /// Publish event to multiple Nostr relays

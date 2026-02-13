@@ -122,67 +122,15 @@ class _MyAppState extends State<MyApp> with WindowListener {
     }
   }
 
-  /// Handle deep link callback from Amber
+  /// Handle deep link callback (legacy - amberflutter now handles Amber internally)
   void _handleDeepLink(Uri uri) async {
     debugPrint('Received deep link: $uri');
     
-    // Parse Amber callback: sendit://amber_callback?result={result}&id={id}&event={event}&type={type}
-    if (uri.scheme == 'sendit' && uri.host == 'amber_callback') {
-      final result = uri.queryParameters['result'];
-      final event = uri.queryParameters['event'];
-      final id = uri.queryParameters['id'];
-      
-      if (result == null || result.isEmpty) {
-        debugPrint('Amber callback missing result');
-        return;
-      }
-      
-      // Check if this is a public key response (no event parameter)
-      if (event == null || event.isEmpty) {
-        // This is a get_public_key response
-        debugPrint('Amber returned public key: ${result.substring(0, 20)}...');
-        
-        // Get package name if provided
-        final packageName = uri.queryParameters['package'];
-        
-        try {
-          // Save the public key from Amber
-          final nostrService = context.read<NostrService>();
-          await nostrService.saveAmberPublicKey(result, packageName: packageName);
-          
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Connected to Amber successfully!')),
-            );
-          }
-        } catch (e) {
-          debugPrint('Error saving Amber pubkey: $e');
-        }
-      } else {
-        // This is a sign_event response (has signature and event)
-        debugPrint('Amber returned signature: ${result.substring(0, 20)}...');
-        
-        try {
-          // Get NostrService and complete the posting
-          final nostrService = context.read<NostrService>();
-          await nostrService.completePostWithAmberSignature(result);
-          
-          // Show success message
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Posted to Nostr via Amber!')),
-            );
-          }
-        } catch (e) {
-          debugPrint('Error completing Amber post: $e');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Nostr posting failed: $e')),
-            );
-          }
-        }
-      }
-    }
+    // Note: Amber integration now uses amberflutter package which handles
+    // activity results internally. This deep link handler is kept for
+    // potential future use or other deep link scenarios.
+    
+    debugPrint('Deep link received but not processed (amberflutter handles Amber)');
   }
 
   @override

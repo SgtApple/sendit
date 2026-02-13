@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:android_intent_plus/android_intent.dart' as android_intent;
 import '../services/storage_service.dart';
+import '../services/nostr_service.dart';
 import '../services/theme_service.dart';
 import '../theme.dart';
 
@@ -157,35 +157,44 @@ class _SettingsViewState extends State<SettingsView> {
                   value: _nostrUseAmber,
                   onChanged: (value) async {
                     if (value) {
-                      // Request public key from Amber
+                      // Request public key from Amber using amberflutter
                       try {
-                        final intent = android_intent.AndroidIntent(
-                          action: 'android.intent.action.VIEW',
-                          data: 'nostrsigner:',
-                          arguments: {'type': 'get_public_key'},
-                        );
-                        await intent.launch();
-                        // Note: The result will come back via the app, user needs to approve in Amber
-                        if (mounted) {
+                        final nostrService = context.read<NostrService>();
+                        final npub = await nostrService.getPublicKeyFromAmber();
+                        
+                        if (npub != null && mounted) {
+                          setState(() {
+                            _nostrNpubController.text = npub;
+                            _nostrUseAmber = true;
+                          });
+                          
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Approve the connection request in Amber app'),
-                              duration: Duration(seconds: 3),
+                              content: Text('Connected to Amber successfully!'),
+                              duration: Duration(seconds: 2),
                             ),
                           );
+                        } else if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to connect to Amber'),
+                            ),
+                          );
+                          return;
                         }
                       } catch (e) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Error launching Amber: $e')),
+                            SnackBar(content: Text('Error connecting to Amber: $e')),
                           );
                         }
                         return;
                       }
+                    } else {
+                      setState(() {
+                        _nostrUseAmber = value;
+                      });
                     }
-                    setState(() {
-                      _nostrUseAmber = value;
-                    });
                   },
                 ),
                 if (_nostrNpubController.text.isNotEmpty)
