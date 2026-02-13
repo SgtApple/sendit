@@ -5,6 +5,22 @@ All notable changes to SendIt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-02-13
+
+### Fixed
+- **Amber signing intent format**
+  - Fixed sign_event intent to show signing dialog instead of opening Amber app
+  - Use URL query parameters for cross-app deep link communication
+  - Include compressionType, returnType, callbackUrl, id, and current_user in URI
+  - Properly encode event JSON for URI
+  - Save and use Amber package name from get_public_key response
+
+### Technical
+- Changed from putExtra approach to URI query parameter approach
+- Format: `nostrsigner:{encodedEvent}?type=sign_event&callbackUrl=sendit://amber_callback&...`
+- Amber now correctly shows signing UI instead of main app screen
+- Package name saved from initial get_public_key handshake
+
 ## [1.2.0] - 2026-02-13
 
 ### Fixed

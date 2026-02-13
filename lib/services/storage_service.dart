@@ -19,6 +19,7 @@ class StorageService {
   static const String keyNostrNsec = 'nostr_nsec';
   static const String keyNostrUseAmber = 'nostr_use_amber';
   static const String keyNostrNpub = 'nostr_npub';
+  static const String keyNostrAmberPackage = 'nostr_amber_package';
   
   static const String keyTheme = 'app_theme';
 

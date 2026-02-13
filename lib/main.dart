@@ -142,10 +142,13 @@ class _MyAppState extends State<MyApp> with WindowListener {
         // This is a get_public_key response
         debugPrint('Amber returned public key: ${result.substring(0, 20)}...');
         
+        // Get package name if provided
+        final packageName = uri.queryParameters['package'];
+        
         try {
           // Save the public key from Amber
           final nostrService = context.read<NostrService>();
-          await nostrService.saveAmberPublicKey(result);
+          await nostrService.saveAmberPublicKey(result, packageName: packageName);
           
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(

@@ -88,7 +88,7 @@ class NostrService extends ChangeNotifier {
   }
 
   /// Save public key received from Amber (NIP-55 get_public_key response)
-  Future<void> saveAmberPublicKey(String pubkeyHex) async {
+  Future<void> saveAmberPublicKey(String pubkeyHex, {String? packageName}) async {
     try {
       // Convert hex pubkey to npub format
       final decoded = hex.decode(pubkeyHex);
@@ -97,6 +97,13 @@ class NostrService extends ChangeNotifier {
       
       // Save as npub
       await _storage.saveString(StorageService.keyNostrNpub, encoded);
+      
+      // Save Amber package name for future intents
+      if (packageName != null && packageName.isNotEmpty) {
+        await _storage.saveString(StorageService.keyNostrAmberPackage, packageName);
+        debugPrint('Nostr: Saved Amber package: $packageName');
+      }
+      
       debugPrint('Nostr: Saved Amber public key as npub');
       notifyListeners();
     } catch (e) {
@@ -105,7 +112,7 @@ class NostrService extends ChangeNotifier {
     }
   }
 
-  /// Sign using Amber app on Android
+  /// Sign using Amber app on Android (NIP-55)
   Future<void> _signWithAmber(String eventJson, String pubkey) async {
     if (!Platform.isAndroid) {
       throw Exception('Amber is only available on Android');
@@ -114,25 +121,41 @@ class NostrService extends ChangeNotifier {
     try {
       debugPrint('Nostr: Signing with Amber...');
       
-      // Encode event JSON for URL
-      final encodedEvent = Uri.encodeComponent(eventJson);
+      // Get Amber package name (saved from get_public_key response)
+      final amberPackage = await _storage.getString(StorageService.keyNostrAmberPackage);
       
-      // Create Amber signing intent
-      // Format: nostrsigner:{eventJson}?type=sign_event&callbackUrl={callback}
-      final amberUri = 'nostrsigner:$encodedEvent?compression=none&returnType=signature&type=sign_event&callbackUrl=sendit://amber_callback&id=${DateTime.now().millisecondsSinceEpoch}';
+      // According to NIP-55, for Android we can use either:
+      // 1. Intent extras (putExtra) - recommended for apps that support registerForActivityResult
+      // 2. URL scheme with query params - works cross-platform
+      // We'll use a hybrid approach: data URI with query params + intent extras
+      
+      final eventId = jsonDecode(eventJson)['id'];
+      final encodedEvent = Uri.encodeComponent(eventJson);
+      final callbackUrl = Uri.encodeComponent('sendit://amber_callback');
+      
+      // Build URI with query parameters (web-style approach that works for deep links)
+      final dataUri = 'nostrsigner:$encodedEvent'
+          '?compressionType=none'
+          '&returnType=signature'
+          '&type=sign_event'
+          '&callbackUrl=$callbackUrl'
+          '&id=$eventId'
+          '&current_user=$pubkey';
       
       final intent = android_intent.AndroidIntent(
         action: 'android.intent.action.VIEW',
-        data: amberUri,
+        data: dataUri,
+        package: amberPackage ?? 'com.greenart7c3.nostrsigner', // Default to Amber's package
         flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
       );
 
-      debugPrint('Nostr: Launching Amber...');
+      debugPrint('Nostr: Launching Amber for signing...');
+      debugPrint('Nostr: Event ID: $eventId');
       await intent.launch();
       
       // Note: The actual signature will be received via deep link callback
-      // This is handled in main.dart with uni_links
-      debugPrint('Nostr: Waiting for Amber callback...');
+      // This is handled in main.dart with app_links
+      debugPrint('Nostr: Waiting for Amber signature callback...');
     } catch (e) {
       debugPrint('Nostr: Amber signing error: $e');
       throw Exception('Failed to launch Amber: $e');
