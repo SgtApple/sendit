@@ -178,13 +178,31 @@ class NostrService extends ChangeNotifier {
     final nsec = await _storage.getString(StorageService.keyNostrNsec);
     final npub = await _storage.getString(StorageService.keyNostrNpub);
 
-    if (npub == null || npub.isEmpty) {
-      throw Exception('Nostr public key (npub) not configured');
+    String? pubkeyHex;
+
+    // Get public key - always required for creating Nostr events
+    if (useAmber && Platform.isAndroid) {
+      // Even with Amber, we need the public key to create the event
+      // Amber only signs the event after it's created
+      if (npub == null || npub.isEmpty) {
+        throw Exception(
+          'Nostr public key (npub) required. Please configure your npub in Settings.\n\n'
+          'Note: Amber signs events but does not provide the public key. '
+          'You must enter your npub in Settings.'
+        );
+      }
+      pubkeyHex = _npubToHex(npub);
+      debugPrint('Nostr: Using npub with Amber signing');
+    } else {
+      // Using nsec - require both npub and nsec
+      if (npub == null || npub.isEmpty) {
+        throw Exception('Nostr public key (npub) not configured');
+      }
+      pubkeyHex = _npubToHex(npub);
     }
 
-    final pubkeyHex = _npubToHex(npub);
     if (pubkeyHex == null) {
-      throw Exception('Invalid Nostr public key');
+      throw Exception('Invalid Nostr public key format');
     }
 
     // Upload images first

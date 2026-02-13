@@ -152,6 +152,7 @@ class _SettingsViewState extends State<SettingsView> {
             decoration: const InputDecoration(
               labelText: 'Public Key (npub)',
               hintText: 'npub1...',
+              helperText: 'Required even when using Amber',
             ),
           ),
           const SizedBox(height: 10),

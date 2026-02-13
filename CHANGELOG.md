@@ -5,6 +5,19 @@ All notable changes to SendIt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-02-13
+
+### Changed
+- **Improved Nostr + Amber UX**
+  - Added helper text clarifying npub is required even with Amber
+  - Improved error messages explaining Amber only signs (doesn't provide keys)
+  - Better validation messaging for Nostr configuration
+
+### Technical Notes
+- Amber is a signing-only service - it signs Nostr events but does not provide public keys
+- Users must configure their npub in Settings regardless of using Amber or nsec
+- The npub is required to create the Nostr event before Amber signs it
+
 ## [1.1.2] - 2026-02-13
 
 ### Fixed
