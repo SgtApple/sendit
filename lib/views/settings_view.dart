@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/storage_service.dart';
@@ -14,7 +15,20 @@ class SettingsView extends StatefulWidget {
 class _SettingsViewState extends State<SettingsView> {
   final StorageService _storage = StorageService();
 
-  final _microBlogTokenController = TextEditingController();
+  // Mastodon
+  final _mastodonInstanceController = TextEditingController();
+  final _mastodonTokenController = TextEditingController();
+  
+  // Bluesky
+  final _blueskyIdentifierController = TextEditingController();
+  final _blueskyPasswordController = TextEditingController();
+  
+  // Nostr
+  final _nostrNsecController = TextEditingController();
+  final _nostrNpubController = TextEditingController();
+  bool _nostrUseAmber = false;
+  
+  // X (Twitter)
   final _xApiKeyController = TextEditingController();
   final _xApiSecretController = TextEditingController();
   final _xUserTokenController = TextEditingController();
@@ -29,7 +43,20 @@ class _SettingsViewState extends State<SettingsView> {
   }
 
   Future<void> _loadSettings() async {
-    _microBlogTokenController.text = await _storage.getString(StorageService.keyMicroBlogToken) ?? '';
+    // Mastodon
+    _mastodonInstanceController.text = await _storage.getString(StorageService.keyMastodonInstance) ?? '';
+    _mastodonTokenController.text = await _storage.getString(StorageService.keyMastodonToken) ?? '';
+    
+    // Bluesky
+    _blueskyIdentifierController.text = await _storage.getString(StorageService.keyBlueskyIdentifier) ?? '';
+    _blueskyPasswordController.text = await _storage.getString(StorageService.keyBlueskyPassword) ?? '';
+    
+    // Nostr
+    _nostrNsecController.text = await _storage.getString(StorageService.keyNostrNsec) ?? '';
+    _nostrNpubController.text = await _storage.getString(StorageService.keyNostrNpub) ?? '';
+    _nostrUseAmber = await _storage.getBool(StorageService.keyNostrUseAmber);
+    
+    // X
     _xApiKeyController.text = await _storage.getString(StorageService.keyXApiKey) ?? '';
     _xApiSecretController.text = await _storage.getString(StorageService.keyXApiSecret) ?? '';
     _xUserTokenController.text = await _storage.getString(StorageService.keyXUserToken) ?? '';
@@ -41,7 +68,20 @@ class _SettingsViewState extends State<SettingsView> {
   }
 
   Future<void> _saveSettings() async {
-    await _storage.saveString(StorageService.keyMicroBlogToken, _microBlogTokenController.text);
+    // Mastodon
+    await _storage.saveString(StorageService.keyMastodonInstance, _mastodonInstanceController.text);
+    await _storage.saveString(StorageService.keyMastodonToken, _mastodonTokenController.text);
+    
+    // Bluesky
+    await _storage.saveString(StorageService.keyBlueskyIdentifier, _blueskyIdentifierController.text);
+    await _storage.saveString(StorageService.keyBlueskyPassword, _blueskyPasswordController.text);
+    
+    // Nostr
+    await _storage.saveString(StorageService.keyNostrNsec, _nostrNsecController.text);
+    await _storage.saveString(StorageService.keyNostrNpub, _nostrNpubController.text);
+    await _storage.saveBool(StorageService.keyNostrUseAmber, _nostrUseAmber);
+    
+    // X
     await _storage.saveString(StorageService.keyXApiKey, _xApiKeyController.text);
     await _storage.saveString(StorageService.keyXApiSecret, _xApiSecretController.text);
     await _storage.saveString(StorageService.keyXUserToken, _xUserTokenController.text);
@@ -69,14 +109,73 @@ class _SettingsViewState extends State<SettingsView> {
           const Text('Theme', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
           _buildThemeSelector(),
+          
           const Divider(height: 40),
-          const Text('Micro.blog', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Mastodon', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
           TextField(
-            controller: _microBlogTokenController,
-            decoration: const InputDecoration(labelText: 'App Token'),
+            controller: _mastodonInstanceController,
+            decoration: const InputDecoration(
+              labelText: 'Instance (e.g., mastodon.social)',
+              hintText: 'mastodon.social',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _mastodonTokenController,
+            decoration: const InputDecoration(labelText: 'Access Token'),
             obscureText: true,
           ),
+          
+          const Divider(height: 40),
+          const Text('Bluesky', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _blueskyIdentifierController,
+            decoration: const InputDecoration(
+              labelText: 'Handle or Email',
+              hintText: 'username.bsky.social',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _blueskyPasswordController,
+            decoration: const InputDecoration(labelText: 'App Password'),
+            obscureText: true,
+          ),
+          
+          const Divider(height: 40),
+          const Text('Nostr', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _nostrNpubController,
+            decoration: const InputDecoration(
+              labelText: 'Public Key (npub)',
+              hintText: 'npub1...',
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (Platform.isAndroid)
+            SwitchListTile(
+              title: const Text('Use Amber for signing'),
+              subtitle: const Text('Sign events with Amber app'),
+              value: _nostrUseAmber,
+              onChanged: (value) {
+                setState(() {
+                  _nostrUseAmber = value;
+                });
+              },
+            ),
+          if (!_nostrUseAmber || !Platform.isAndroid)
+            TextField(
+              controller: _nostrNsecController,
+              decoration: const InputDecoration(
+                labelText: 'Private Key (nsec)',
+                hintText: 'nsec1...',
+              ),
+              obscureText: true,
+            ),
+          
           const Divider(height: 40),
           const Text('X (Twitter)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
@@ -101,6 +200,7 @@ class _SettingsViewState extends State<SettingsView> {
             decoration: const InputDecoration(labelText: 'Access Token Secret'),
             obscureText: true,
           ),
+          
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _saveSettings,
@@ -141,7 +241,12 @@ class _SettingsViewState extends State<SettingsView> {
 
   @override
   void dispose() {
-    _microBlogTokenController.dispose();
+    _mastodonInstanceController.dispose();
+    _mastodonTokenController.dispose();
+    _blueskyIdentifierController.dispose();
+    _blueskyPasswordController.dispose();
+    _nostrNsecController.dispose();
+    _nostrNpubController.dispose();
     _xApiKeyController.dispose();
     _xApiSecretController.dispose();
     _xUserTokenController.dispose();

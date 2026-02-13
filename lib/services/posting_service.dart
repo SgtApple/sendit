@@ -1,15 +1,26 @@
 import 'package:flutter/foundation.dart';
-import 'microblog_service.dart';
+import 'mastodon_service.dart';
+import 'bluesky_service.dart';
+import 'nostr_service.dart';
 import 'x_service.dart';
 
 class PostingService extends ChangeNotifier {
-  MicroBlogService microBlogService;
+  MastodonService mastodonService;
+  BlueskyService blueskyService;
+  NostrService nostrService;
   XService xService;
 
-  PostingService({required this.microBlogService, required this.xService});
+  PostingService({
+    required this.mastodonService,
+    required this.blueskyService,
+    required this.nostrService,
+    required this.xService,
+  });
 
-  void update(MicroBlogService microBlog, XService x) {
-    microBlogService = microBlog;
+  void update(MastodonService mastodon, BlueskyService bluesky, NostrService nostr, XService x) {
+    mastodonService = mastodon;
+    blueskyService = bluesky;
+    nostrService = nostr;
     xService = x;
     notifyListeners();
   }
@@ -21,32 +32,62 @@ class PostingService extends ChangeNotifier {
   Future<Map<String, dynamic>> postAll(
     String markdownContent,
     List<String> imagePaths, {
-    bool postToMicroblog = true,
-    bool postToX = true,
+    bool postToMastodon = false,
+    bool postToBluesky = false,
+    bool postToNostr = false,
+    bool postToX = false,
   }) async {
     _isPosting = true;
     notifyListeners();
 
-    final xContent = stripMarkdownForX(markdownContent);
     final results = <String, dynamic>{
-      'microblog': postToMicroblog ? null : 'Skipped',
+      'mastodon': postToMastodon ? null : 'Skipped',
+      'bluesky': postToBluesky ? null : 'Skipped',
+      'nostr': postToNostr ? null : 'Skipped',
       'x': postToX ? null : 'Skipped',
     };
 
     try {
       final futures = <Future>[];
       
-      if (postToMicroblog) {
+      // Mastodon supports Markdown natively
+      if (postToMastodon) {
         futures.add(
-          microBlogService.post(markdownContent, imagePaths: imagePaths).then((_) {
-            results['microblog'] = 'Success';
+          mastodonService.post(markdownContent, imagePaths: imagePaths).then((_) {
+            results['mastodon'] = 'Success';
           }).catchError((e) {
-            results['microblog'] = 'Error: $e';
+            results['mastodon'] = 'Error: $e';
           }),
         );
       }
       
+      // Bluesky uses plain text
+      if (postToBluesky) {
+        final blueskyContent = stripMarkdownForPlainText(markdownContent);
+        futures.add(
+          blueskyService.post(blueskyContent, imagePaths: imagePaths).then((_) {
+            results['bluesky'] = 'Success';
+          }).catchError((e) {
+            results['bluesky'] = 'Error: $e';
+          }),
+        );
+      }
+      
+      // Nostr uses plain text with URLs
+      if (postToNostr) {
+        final nostrContent = stripMarkdownForPlainText(markdownContent);
+        futures.add(
+          nostrService.post(nostrContent, imagePaths: imagePaths).then((_) {
+            results['nostr'] = 'Success';
+          }).catchError((e) {
+            results['nostr'] = 'Error: $e';
+          }),
+        );
+      }
+      
+      // X (Twitter) uses plain text
       if (postToX) {
+        final xContent = stripMarkdownForPlainText(markdownContent);
         futures.add(
           xService.post(xContent, imagePaths: imagePaths).then((_) {
             results['x'] = 'Success';
@@ -67,28 +108,28 @@ class PostingService extends ChangeNotifier {
     return results;
   }
 
-  /// Strips Markdown syntax for X (Twitter) while preserving links and text.
-  String stripMarkdownForX(String markdown) {
+  /// Strips Markdown syntax for plain text platforms (X, Bluesky, Nostr)
+  String stripMarkdownForPlainText(String markdown) {
     String text = markdown;
 
     // Remove headers (#, ##, etc.)
     text = text.replaceAll(RegExp(r'^#{1,6}\s*', multiLine: true), '');
 
     // Remove bold/italic (**text**, __text__, *text*, _text_)
-    // Note: handling nested might be tricky with regex, simple approach:
-    text = text.replaceAll(RegExp(r'(\*\*|__)'), ''); // Start/End bold
-    text = text.replaceAll(RegExp(r'(\*|_)'), '');    // Start/End italic
+    text = text.replaceAll(RegExp(r'\*\*([^\*]+)\*\*'), r'$1'); // Bold **
+    text = text.replaceAll(RegExp(r'__([^_]+)__'), r'$1');       // Bold __
+    text = text.replaceAll(RegExp(r'\*([^\*]+)\*'), r'$1');      // Italic *
+    text = text.replaceAll(RegExp(r'_([^_]+)_'), r'$1');         // Italic _
 
     // Replace links [text](url) with "text url"
-    // Use a regex to capture text and url
     text = text.replaceAllMapped(RegExp(r'\[([^\]]+)\]\(([^)]+)\)'), (match) {
       final linkText = match.group(1);
       final url = match.group(2);
       return '$linkText $url';
     });
 
-    // Remove code blocks (optional, but good for cleanup)
-    text = text.replaceAll('```', '');
+    // Remove code blocks
+    text = text.replaceAll(RegExp(r'```[^`]*```'), '');
     text = text.replaceAll('`', '');
 
     // Remove blockquotes
@@ -121,4 +162,15 @@ class PostingService extends ChangeNotifier {
 
     return length;
   }
+
+  /// Get character limits for each platform
+  Map<String, int> getCharacterLimits() {
+    return {
+      'mastodon': 500,  // Default, can vary by instance
+      'bluesky': 300,
+      'nostr': 0,       // No limit
+      'x': 280,
+    };
+  }
 }
+

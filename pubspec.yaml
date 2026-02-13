@@ -1,5 +1,5 @@
 name: sendit
-description: "A new Flutter project."
+description: "Cross-platform social media poster for Mastodon, Bluesky, Nostr, and X (Twitter)."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.10.4
@@ -46,6 +46,16 @@ dependencies:
   google_fonts: ^6.3.3
   crypto: ^3.0.7
   http: ^1.6.0
+  # Image processing
+  image: ^4.3.0
+  # Nostr support
+  bech32: ^0.2.2
+  web_socket_channel: ^3.0.1
+  convert: ^3.1.1
+  # Android intents for Amber
+  android_intent_plus: ^5.1.0
+  # Deep linking for Amber callbacks
+  app_links: ^6.3.3
 
 dev_dependencies:
   flutter_test:

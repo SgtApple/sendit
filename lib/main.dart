@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:system_tray/system_tray.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:app_links/app_links.dart';
 
-import 'services/microblog_service.dart';
+import 'services/mastodon_service.dart';
+import 'services/bluesky_service.dart';
+import 'services/nostr_service.dart';
 import 'services/x_service.dart';
 import 'services/posting_service.dart';
 import 'services/theme_service.dart';
@@ -37,16 +41,20 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => MicroBlogService()),
+        ChangeNotifierProvider(create: (_) => MastodonService()),
+        ChangeNotifierProvider(create: (_) => BlueskyService()),
+        ChangeNotifierProvider(create: (_) => NostrService()),
         ChangeNotifierProvider(create: (_) => XService()),
         ChangeNotifierProvider(create: (_) => ThemeService()),
-        ChangeNotifierProxyProvider2<MicroBlogService, XService, PostingService>(
+        ChangeNotifierProxyProvider4<MastodonService, BlueskyService, NostrService, XService, PostingService>(
           create: (context) => PostingService(
-            microBlogService: Provider.of<MicroBlogService>(context, listen: false),
+            mastodonService: Provider.of<MastodonService>(context, listen: false),
+            blueskyService: Provider.of<BlueskyService>(context, listen: false),
+            nostrService: Provider.of<NostrService>(context, listen: false),
             xService: Provider.of<XService>(context, listen: false),
           ),
-          update: (_, microBlog, x, previous) =>
-              previous!..update(microBlog, x),
+          update: (_, mastodon, bluesky, nostr, x, previous) =>
+              previous!..update(mastodon, bluesky, nostr, x),
         ),
       ],
       child: const MyApp(),
@@ -63,6 +71,8 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WindowListener {
   final bool _isDesktop = Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+  late AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
 
   @override
   void initState() {
@@ -71,6 +81,11 @@ class _MyAppState extends State<MyApp> with WindowListener {
       windowManager.addListener(this);
       _initSystemTray();
     }
+    
+    // Initialize deep link handling for Amber callbacks (Android only)
+    if (Platform.isAndroid) {
+      _initDeepLinks();
+    }
   }
 
   @override
@@ -78,7 +93,70 @@ class _MyAppState extends State<MyApp> with WindowListener {
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
+    _linkSubscription?.cancel();
     super.dispose();
+  }
+
+  /// Initialize deep link listener for Amber callbacks
+  void _initDeepLinks() async {
+    _appLinks = AppLinks();
+    
+    try {
+      // Handle initial deep link if app was launched by one
+      final initialLink = await _appLinks.getInitialLink();
+      if (initialLink != null) {
+        _handleDeepLink(initialLink);
+      }
+
+      // Listen for deep links while app is running
+      _linkSubscription = _appLinks.uriLinkStream.listen(
+        (Uri uri) {
+          _handleDeepLink(uri);
+        },
+        onError: (err) {
+          debugPrint('Deep link error: $err');
+        },
+      );
+    } catch (e) {
+      debugPrint('Failed to initialize deep links: $e');
+    }
+  }
+
+  /// Handle deep link callback from Amber
+  void _handleDeepLink(Uri uri) async {
+    debugPrint('Received deep link: $uri');
+    
+    // Parse Amber callback: sendit://amber_callback?signature={sig}&id={id}&event={event}
+    if (uri.scheme == 'sendit' && uri.host == 'amber_callback') {
+      final signature = uri.queryParameters['signature'];
+      final event = uri.queryParameters['event'];
+      
+      if (signature != null && signature.isNotEmpty) {
+        debugPrint('Amber returned signature: ${signature.substring(0, 20)}...');
+        
+        try {
+          // Get NostrService and complete the posting
+          final nostrService = context.read<NostrService>();
+          await nostrService.completePostWithAmberSignature(signature);
+          
+          // Show success message
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Posted to Nostr via Amber!')),
+            );
+          }
+        } catch (e) {
+          debugPrint('Error completing Amber post: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Nostr posting failed: $e')),
+            );
+          }
+        }
+      } else {
+        debugPrint('Amber callback missing signature');
+      }
+    }
   }
 
   @override

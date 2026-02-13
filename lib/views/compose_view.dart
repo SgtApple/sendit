@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../services/posting_service.dart';
-import 'settings_view.dart'; // Import SettingsView
+import 'settings_view.dart';
 
 class ComposeView extends StatefulWidget {
   const ComposeView({super.key});
@@ -15,8 +15,10 @@ class ComposeView extends StatefulWidget {
 class _ComposeViewState extends State<ComposeView> {
   final TextEditingController _textController = TextEditingController();
   final List<String> _selectedImages = [];
-  bool _postToMicroblog = true;
-  bool _postToX = true;
+  bool _postToMastodon = false;
+  bool _postToBluesky = false;
+  bool _postToNostr = false;
+  bool _postToX = false;
 
   @override
   void dispose() {
@@ -54,7 +56,7 @@ class _ComposeViewState extends State<ComposeView> {
       return;
     }
 
-    if (!_postToMicroblog && !_postToX) {
+    if (!_postToMastodon && !_postToBluesky && !_postToNostr && !_postToX) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select at least one platform.')),
       );
@@ -64,17 +66,23 @@ class _ComposeViewState extends State<ComposeView> {
     final results = await postingService.postAll(
       content,
       _selectedImages,
-      postToMicroblog: _postToMicroblog,
+      postToMastodon: _postToMastodon,
+      postToBluesky: _postToBluesky,
+      postToNostr: _postToNostr,
       postToX: _postToX,
     );
 
     if (!mounted) return;
 
-    final microblogStatus = results['microblog'];
+    final mastodonStatus = results['mastodon'];
+    final blueskyStatus = results['bluesky'];
+    final nostrStatus = results['nostr'];
     final xStatus = results['x'];
     
     List<String> statusParts = [];
-    if (_postToMicroblog) statusParts.add('Micro.blog: $microblogStatus');
+    if (_postToMastodon) statusParts.add('Mastodon: $mastodonStatus');
+    if (_postToBluesky) statusParts.add('Bluesky: $blueskyStatus');
+    if (_postToNostr) statusParts.add('Nostr: $nostrStatus');
     if (_postToX) statusParts.add('X: $xStatus');
     String message = 'Posting complete.\n${statusParts.join('\n')}';
     
@@ -82,8 +90,12 @@ class _ComposeViewState extends State<ComposeView> {
       SnackBar(content: Text(message)),
     );
 
-    bool allSucceeded = (!_postToMicroblog || microblogStatus == 'Success') &&
-                        (!_postToX || xStatus == 'Success');
+    bool allSucceeded = 
+        (!_postToMastodon || mastodonStatus == 'Success') &&
+        (!_postToBluesky || blueskyStatus == 'Success') &&
+        (!_postToNostr || nostrStatus == 'Success') &&
+        (!_postToX || xStatus == 'Success');
+    
     if (allSucceeded) {
       _textController.clear();
       setState(() {
@@ -131,7 +143,7 @@ class _ComposeViewState extends State<ComposeView> {
                       maxLines: null,
                       expands: true,
                       decoration: const InputDecoration(
-                        hintText: 'Write something... (Markdown supported)',
+                        hintText: 'Write something... (Markdown supported for Mastodon)',
                         border: InputBorder.none,
                       ),
                       style: Theme.of(context).textTheme.bodyLarge,
@@ -141,33 +153,68 @@ class _ComposeViewState extends State<ComposeView> {
                   ValueListenableBuilder(
                     valueListenable: _textController,
                     builder: (context, TextEditingValue value, child) {
-                      final xLength = postingService.calculateXLength(value.text);
-                      final isOverLimit = xLength > 300;
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
+                      final plainText = postingService.stripMarkdownForPlainText(value.text);
+                      final xLength = postingService.calculateXLength(plainText);
+                      final limits = postingService.getCharacterLimits();
+                      
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(
-                            'X: $xLength/300',
-                            style: TextStyle(
-                              color: isOverLimit ? Colors.red : Colors.grey,
-                              fontWeight: isOverLimit ? FontWeight.bold : FontWeight.normal,
+                          if (_postToX)
+                            Text(
+                              'X: $xLength/${limits['x']}',
+                              style: TextStyle(
+                                color: xLength > limits['x']! ? Colors.red : Colors.grey,
+                                fontWeight: xLength > limits['x']! ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 12,
+                              ),
                             ),
-                          ),
+                          if (_postToBluesky)
+                            Text(
+                              'Bluesky: ${plainText.length}/${limits['bluesky']}',
+                              style: TextStyle(
+                                color: plainText.length > limits['bluesky']! ? Colors.orange : Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
+                          if (_postToMastodon)
+                            Text(
+                              'Mastodon: ${value.text.length}/${limits['mastodon']}',
+                              style: TextStyle(
+                                color: value.text.length > limits['mastodon']! ? Colors.orange : Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
                         ],
                       );
                     },
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
                     children: [
                       FilterChip(
-                        label: const Text('Micro.blog'),
-                        selected: _postToMicroblog,
+                        label: const Text('Mastodon'),
+                        selected: _postToMastodon,
                         onSelected: (selected) {
-                          setState(() => _postToMicroblog = selected);
+                          setState(() => _postToMastodon = selected);
                         },
                       ),
-                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Bluesky'),
+                        selected: _postToBluesky,
+                        onSelected: (selected) {
+                          setState(() => _postToBluesky = selected);
+                        },
+                      ),
+                      FilterChip(
+                        label: const Text('Nostr'),
+                        selected: _postToNostr,
+                        onSelected: (selected) {
+                          setState(() => _postToNostr = selected);
+                        },
+                      ),
                       FilterChip(
                         label: const Text('X'),
                         selected: _postToX,

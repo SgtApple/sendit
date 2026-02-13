@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  gtk
   screen_retriever_linux
   system_tray
   window_manager
